@@ -1,9 +1,243 @@
 # =============================================================================
-# Mart Models - Facts Documentation & Tests
+# Mart Models — Facts: Documentation & Tests
 # =============================================================================
-# Implementation: Phase 3
+# Architecture: Kimball Star Schema — Gold Layer
+# Materialization: incremental (merge strategy)
+# Schema: ANALYTICS.MARTS
+#
+# All facts include:
+#   - Surrogate primary key (*_key) via dbt_utils.generate_surrogate_key()
+#   - Foreign keys to dimension tables (relationship tests verify integrity)
+#   - Incremental filter on _source_loaded_at for efficient processing
+#   - Conformed dimension keys (date_key, currency_key) for cross-domain analysis
+# =============================================================================
 
 version: 2
 
-# TODO: Add model definitions, column descriptions, and tests in Phase 3
+models:
 
+  # ─────────────────────────────────────────────────────────────────────────
+  # fact_transactions — Banking Domain
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: fact_transactions
+    description: >
+      Fact table for credit card transactions. One row per transaction.
+      Materialized as incremental (merge on transaction_key) for efficient
+      processing of 1.85M+ rows. Joins to dim_dates, dim_customers,
+      dim_merchants, and dim_currencies for star schema analysis.
+    columns:
+      - name: transaction_key
+        description: "Surrogate primary key — MD5 hash of trans_num"
+        data_tests:
+          - not_null
+          - unique
+
+      - name: date_key
+        description: "FK → dim_dates (transaction date)"
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_dates')
+                field: date_key
+
+      - name: currency_key
+        description: "FK → dim_currencies (USD for all transactions)"
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_currencies')
+                field: currency_key
+
+      - name: customer_key
+        description: "FK → dim_customers (card holder)"
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_key
+
+      - name: merchant_key
+        description: "FK → dim_merchants (merchant)"
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_merchants')
+                field: merchant_key
+
+      - name: trans_num
+        description: "Degenerate dimension — original transaction number from source"
+        data_tests:
+          - not_null
+
+      - name: card_number
+        description: "Degenerate dimension — credit card number"
+
+      - name: transaction_amount
+        description: "Transaction amount in USD (DECIMAL 10,2)"
+        data_tests:
+          - not_null
+
+      - name: is_fraud
+        description: "Fraud indicator (0 = legitimate, 1 = fraudulent)"
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+
+      - name: transaction_at
+        description: "Full transaction timestamp"
+
+      - name: transaction_date
+        description: "Transaction date (DATE type, derived from timestamp)"
+
+      - name: category
+        description: "Transaction category (e.g., grocery_pos, travel)"
+
+      - name: _source_loaded_at
+        description: "Metadata — when the source row was loaded into RAW"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # fact_daily_prices — Market Data Domain
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: fact_daily_prices
+    description: >
+      Fact table for daily stock/security prices. One row per ticker per trading day.
+      Materialized as incremental (merge on price_key). Includes calculated
+      daily_return measure using LAG() window function. Joins to dim_dates,
+      dim_securities, and dim_currencies for cross-domain analysis.
+    columns:
+      - name: price_key
+        description: "Surrogate primary key — MD5 hash of ticker_symbol + price_date"
+        data_tests:
+          - not_null
+          - unique
+
+      - name: date_key
+        description: "FK → dim_dates (price date)"
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_dates')
+                field: date_key
+
+      - name: currency_key
+        description: "FK → dim_currencies (trading currency derived from dim_securities)"
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_currencies')
+                field: currency_key
+
+      - name: security_key
+        description: "FK → dim_securities (stock/security)"
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_securities')
+                field: security_key
+
+      - name: ticker_symbol
+        description: "Degenerate dimension — stock ticker symbol"
+        data_tests:
+          - not_null
+
+      - name: open_price
+        description: "Opening price for the trading day"
+
+      - name: high_price
+        description: "Highest price during the trading day"
+
+      - name: low_price
+        description: "Lowest price during the trading day"
+
+      - name: close_price
+        description: "Closing price for the trading day"
+        data_tests:
+          - not_null
+
+      - name: adjusted_close_price
+        description: "Adjusted closing price (accounts for splits and dividends)"
+
+      - name: volume
+        description: "Number of shares traded"
+
+      - name: daily_return
+        description: "Calculated: (close - prev_close) / prev_close. NULL for first trading day per ticker."
+
+      - name: price_date
+        description: "Trading date"
+
+      - name: _source_loaded_at
+        description: "Metadata — when the source row was loaded into RAW"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # fact_exchange_rates — Cross-Domain Bridge
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: fact_exchange_rates
+    description: >
+      Fact table for daily exchange rates. One row per currency pair per day.
+      Materialized as incremental (merge on rate_key). Uses role-playing
+      dim_currencies (base_currency_key and target_currency_key). Includes
+      calculated rate_change (day-over-day delta). Serves as a bridge fact
+      enabling cross-domain currency conversion analysis.
+    columns:
+      - name: rate_key
+        description: "Surrogate primary key — MD5 hash of base_currency + target_currency + rate_date"
+        data_tests:
+          - not_null
+          - unique
+
+      - name: date_key
+        description: "FK → dim_dates (rate date)"
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_dates')
+                field: date_key
+
+      - name: base_currency_key
+        description: "FK → dim_currencies (base currency — EUR)"
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_currencies')
+                field: currency_key
+
+      - name: target_currency_key
+        description: "FK → dim_currencies (target currency — role-playing)"
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_currencies')
+                field: currency_key
+
+      - name: base_currency
+        description: "Degenerate dimension — base currency code (EUR)"
+
+      - name: target_currency
+        description: "Degenerate dimension — target currency code"
+
+      - name: exchange_rate
+        description: "Exchange rate (1 base = X target)"
+        data_tests:
+          - not_null
+
+      - name: rate_change
+        description: "Calculated: today's rate - yesterday's rate. NULL for first day per pair."
+
+      - name: rate_date
+        description: "Rate date"
+
+      - name: _source_loaded_at
+        description: "Metadata — when the source row was loaded into RAW"
