@@ -1,9 +1,237 @@
 # =============================================================================
-# Mart Models - Dimensions Documentation & Tests
+# Mart Models — Dimensions: Documentation & Tests
 # =============================================================================
-# Implementation: Phase 3
+# Architecture: Kimball Star Schema — Gold Layer
+# Materialization: table (small cardinality, fast BI joins)
+# Schema: ANALYTICS.MARTS
+#
+# All dimensions include:
+#   - Surrogate key (*_key) via dbt_utils.generate_surrogate_key()
+#   - Default record (key = '-1') for orphan fact handling
+#   - Conformed dimensions (dim_dates, dim_currencies) shared across facts
+# =============================================================================
 
 version: 2
 
-# TODO: Add model definitions, column descriptions, and tests in Phase 3
+models:
 
+  # ─────────────────────────────────────────────────────────────────────────
+  # dim_dates — Conformed Date Dimension (Date Spine)
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: dim_dates
+    description: >
+      Conformed date dimension generated via dbt_utils.date_spine.
+      One row per calendar day from 2019-01-01 to 2026-12-31.
+      Shared across all fact tables as the primary time dimension.
+      Enriched with calendar attributes and trading day flags.
+    columns:
+      - name: date_key
+        description: "Surrogate key — MD5 hash of date_day"
+        data_tests:
+          - not_null
+          - unique
+
+      - name: date_day
+        description: "Calendar date (YYYY-MM-DD)"
+        data_tests:
+          - not_null
+          - unique
+
+      - name: day_of_week
+        description: "Day of week as integer (0=Monday, 6=Sunday)"
+
+      - name: day_of_week_name
+        description: "Day of week name abbreviation (Mon, Tue, Wed, ...)"
+
+      - name: day_of_month
+        description: "Day number within the month (1–31)"
+
+      - name: day_of_year
+        description: "Day number within the year (1–366)"
+
+      - name: week_of_year
+        description: "ISO week number within the year (1–53)"
+
+      - name: month_number
+        description: "Month number (1–12)"
+
+      - name: month_name
+        description: "Month name abbreviation (Jan, Feb, Mar, ...)"
+
+      - name: quarter_number
+        description: "Quarter number (1–4)"
+
+      - name: year_number
+        description: "4-digit year"
+
+      - name: is_weekend
+        description: "TRUE if Saturday or Sunday"
+
+      - name: is_month_start
+        description: "TRUE if first day of the month"
+
+      - name: is_month_end
+        description: "TRUE if last day of the month"
+
+      - name: is_year_start
+        description: "TRUE if January 1st"
+
+      - name: is_year_end
+        description: "TRUE if December 31st"
+
+      - name: is_trading_day
+        description: "TRUE if weekday (simplified — excludes weekends only)"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # dim_currencies — Conformed Currency Dimension (Seed-Based)
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: dim_currencies
+    description: >
+      Conformed currency dimension sourced from the currency_codes seed.
+      One row per currency plus a default record (key='-1') for orphan handling.
+      Shared across fact_transactions, fact_daily_prices, and fact_exchange_rates.
+    columns:
+      - name: currency_key
+        description: "Surrogate key — MD5 hash of currency_code, or '-1' for default"
+        data_tests:
+          - not_null
+          - unique
+
+      - name: currency_code
+        description: "ISO 4217 currency code (EUR, USD, GBP, CHF, JPY, CAD, AUD)"
+        data_tests:
+          - not_null
+
+      - name: currency_name
+        description: "Full currency name (e.g., 'Euro', 'US Dollar')"
+
+      - name: region
+        description: "Geographic region (Europe, North America, Asia, Oceania)"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # dim_customers — Domain Dimension (Transaction-Derived)
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: dim_customers
+    description: >
+      Customer dimension derived from stg_transactions, deduplicated by card_number.
+      One row per unique customer (current state).
+      Includes derived age_group bucketing and a default record for orphan handling.
+      Historical changes tracked via snap_customers (SCD2).
+    columns:
+      - name: customer_key
+        description: "Surrogate key — MD5 hash of card_number, or '-1' for default"
+        data_tests:
+          - not_null
+          - unique
+
+      - name: card_number
+        description: "Credit card number (natural key from source)"
+
+      - name: first_name
+        description: "Customer first name"
+
+      - name: last_name
+        description: "Customer last name"
+
+      - name: full_name
+        description: "Concatenated first + last name"
+
+      - name: gender
+        description: "Customer gender (M, F, or U for default record)"
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['M', 'F', 'U']
+
+      - name: street
+        description: "Street address"
+
+      - name: city
+        description: "City"
+
+      - name: state
+        description: "US state abbreviation"
+
+      - name: zip_code
+        description: "ZIP code"
+
+      - name: latitude
+        description: "Customer location latitude"
+
+      - name: longitude
+        description: "Customer location longitude"
+
+      - name: city_pop
+        description: "Population of the customer's city"
+
+      - name: job
+        description: "Customer's occupation"
+
+      - name: date_of_birth
+        description: "Date of birth"
+
+      - name: age_group
+        description: "Derived age bucket: 18-24, 25-34, 35-44, 45-54, 55-64, 65+, or Unknown"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # dim_merchants — Domain Dimension (Transaction-Derived)
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: dim_merchants
+    description: >
+      Merchant dimension derived from stg_transactions, deduplicated by merchant_name.
+      One row per unique merchant with the most frequent category assigned.
+      Includes a default record for orphan handling.
+    columns:
+      - name: merchant_key
+        description: "Surrogate key — MD5 hash of merchant_name, or '-1' for default"
+        data_tests:
+          - not_null
+          - unique
+
+      - name: merchant_name
+        description: "Merchant name (cleaned — 'fraud_' prefix removed)"
+        data_tests:
+          - not_null
+
+      - name: category
+        description: "Most frequent transaction category for this merchant"
+        data_tests:
+          - not_null
+
+      - name: merchant_latitude
+        description: "Merchant location latitude"
+
+      - name: merchant_longitude
+        description: "Merchant location longitude"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # dim_securities — Domain Dimension (Market-Derived)
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: dim_securities
+    description: >
+      Security dimension derived from stg_market_prices, one row per distinct ticker.
+      Enriched with static metadata: security name, exchange, sector, trading currency.
+      Includes a default record for orphan handling.
+    columns:
+      - name: security_key
+        description: "Surrogate key — MD5 hash of ticker_symbol, or '-1' for default"
+        data_tests:
+          - not_null
+          - unique
+
+      - name: ticker_symbol
+        description: "Stock ticker symbol (e.g., AAPL, MSFT, BNP.PA)"
+        data_tests:
+          - not_null
+
+      - name: security_name
+        description: "Full security name (e.g., 'Apple Inc.', 'BNP Paribas SA')"
+
+      - name: exchange
+        description: "Stock exchange (NYSE/NASDAQ, LSE, Euronext Paris, XETRA, SIX)"
+
+      - name: sector
+        description: "Industry sector (Technology, Financial Services, Healthcare)"
+
+      - name: trading_currency
+        description: "Currency the security is traded in (USD, GBP, EUR, CHF)"

@@ -1,9 +1,22 @@
 -- =============================================================================
--- Macro: Generate Surrogate Key
+-- Surrogate Key Strategy
 -- =============================================================================
--- Wrapper around dbt_utils.generate_surrogate_key for consistent usage.
--- Used across all dimension and fact models.
+-- This project uses dbt_utils.generate_surrogate_key() directly in models.
 --
--- Implementation: Phase 3
+-- Convention:
+--   {{ dbt_utils.generate_surrogate_key(['column_a', 'column_b']) }}
+--
+-- The function produces an MD5 hash of the concatenated input columns,
+-- yielding a deterministic, collision-resistant 32-char hex string.
+--
+-- All surrogate keys follow the naming pattern: <entity>_key
+--   - dim_dates       → date_key
+--   - dim_currencies  → currency_key
+--   - dim_customers   → customer_key
+--   - dim_merchants   → merchant_key
+--   - dim_securities  → security_key
+--   - fact_*          → <fact>_key
+--
+-- Default records use the literal string '-1' as their surrogate key
+-- to handle orphan facts (missing foreign keys) gracefully.
 -- =============================================================================
-
