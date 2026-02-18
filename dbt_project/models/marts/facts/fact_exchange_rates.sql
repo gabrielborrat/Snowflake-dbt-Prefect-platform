@@ -1,0 +1,11 @@
+-- =============================================================================
+-- Fact: Exchange Rates
+-- =============================================================================
+-- Grain: One row per currency pair per day
+-- Source: stg_exchange_rates
+-- Conformed dimensions: dim_dates, dim_currencies
+-- Bridge fact enabling cross-domain currency analysis
+--
+-- Implementation: Phase 3
+-- =============================================================================
+

@@ -1,0 +1,11 @@
+-- =============================================================================
+-- Fact: Daily Prices
+-- =============================================================================
+-- Grain: One row per security per trading day
+-- Source: stg_market_prices
+-- Conformed dimensions: dim_dates, dim_currencies
+-- Domain dimensions: dim_securities
+--
+-- Implementation: Phase 3
+-- =============================================================================
+

@@ -1,0 +1,322 @@
+# =============================================================================
+# Staging Layer — Sources & Models
+# =============================================================================
+# This file declares:
+#   1. Sources: RAW layer tables (entry point into the dbt DAG)
+#   2. Models: Staging model schemas, column descriptions, and tests
+#
+# Design principle: source() is used ONLY in staging models.
+# All downstream models use ref() exclusively.
+# =============================================================================
+
+version: 2
+
+# =============================================================================
+# SOURCES — RAW Layer Tables (loaded by Python ingestion scripts)
+# =============================================================================
+
+sources:
+  # ---------------------------------------------------------------------------
+  # Source: Credit Card Transactions (Kaggle CSV)
+  # ---------------------------------------------------------------------------
+  - name: raw_transactions
+    database: RAW
+    schema: TRANSACTIONS
+    description: >
+      Credit card transaction data from the Kaggle Fraud Detection dataset.
+      Contains 1.85M+ transactions with customer details, merchant info,
+      geolocation, and fraud labels. Loaded via Python ingestion script
+      (TRUNCATE + INSERT pattern).
+    tables:
+      - name: credit_card_transactions
+        description: "Raw credit card transactions — one row per transaction"
+        config:
+          loaded_at_field: _loaded_at
+          freshness:
+            warn_after: {count: 7, period: day}
+            error_after: {count: 30, period: day}
+        columns:
+          - name: TRANS_DATE_TRANS_TIME
+            description: "Transaction timestamp (date and time of the purchase)"
+          - name: CC_NUM
+            description: "Credit card number (anonymized numeric identifier)"
+          - name: MERCHANT
+            description: "Merchant name where the transaction occurred"
+          - name: CATEGORY
+            description: "Merchant category (e.g., grocery_pos, gas_transport, shopping_net)"
+          - name: AMT
+            description: "Transaction amount in USD"
+          - name: FIRST
+            description: "Customer first name"
+          - name: LAST
+            description: "Customer last name"
+          - name: GENDER
+            description: "Customer gender (M or F)"
+          - name: STREET
+            description: "Customer street address"
+          - name: CITY
+            description: "Customer city"
+          - name: STATE
+            description: "Customer US state code (e.g., NY, CA, TX)"
+          - name: ZIP
+            description: "Customer ZIP code"
+          - name: LAT
+            description: "Customer latitude (home address geolocation)"
+          - name: LONG
+            description: "Customer longitude (home address geolocation)"
+          - name: CITY_POP
+            description: "Population of the customer's city"
+          - name: JOB
+            description: "Customer's job title / occupation"
+          - name: DOB
+            description: "Customer date of birth"
+          - name: TRANS_NUM
+            description: "Unique transaction identifier (natural key)"
+            tests:
+              - not_null
+              - unique
+          - name: UNIX_TIME
+            description: "Transaction timestamp as Unix epoch (seconds since 1970-01-01)"
+          - name: MERCH_LAT
+            description: "Merchant latitude (store geolocation)"
+          - name: MERCH_LONG
+            description: "Merchant longitude (store geolocation)"
+          - name: IS_FRAUD
+            description: "Fraud label — 1 if fraudulent, 0 if legitimate"
+          - name: _LOADED_AT
+            description: "Audit timestamp — when this row was loaded into Snowflake by the ingestion script"
+
+  # ---------------------------------------------------------------------------
+  # Source: Daily Stock Prices (Yahoo Finance API)
+  # ---------------------------------------------------------------------------
+  - name: raw_market_data
+    database: RAW
+    schema: MARKET_DATA
+    description: >
+      Daily OHLCV stock prices from Yahoo Finance via the yfinance Python library.
+      Covers 8 tickers (US tech, US banks, EU banks, EU blue chips) from 2020 onward.
+      Loaded via Python ingestion script (incremental MERGE on ticker + date).
+    tables:
+      - name: daily_prices
+        description: "Daily OHLCV prices — one row per ticker per trading day"
+        config:
+          loaded_at_field: _loaded_at
+          freshness:
+            warn_after: {count: 7, period: day}
+            error_after: {count: 30, period: day}
+        columns:
+          - name: TICKER
+            description: "Stock ticker symbol (e.g., AAPL, MSFT, JPM, HSBA.L)"
+            tests:
+              - not_null
+          - name: DATE
+            description: "Trading date (market was open on this day)"
+            tests:
+              - not_null
+          - name: OPEN
+            description: "Opening price for the trading day"
+          - name: HIGH
+            description: "Highest price reached during the trading day"
+          - name: LOW
+            description: "Lowest price reached during the trading day"
+          - name: CLOSE
+            description: "Closing price at end of trading day"
+            tests:
+              - not_null
+          - name: ADJ_CLOSE
+            description: "Adjusted closing price (accounts for splits and dividends)"
+          - name: VOLUME
+            description: "Number of shares traded during the day"
+          - name: _LOADED_AT
+            description: "Audit timestamp — when this row was loaded into Snowflake by the ingestion script"
+
+  # ---------------------------------------------------------------------------
+  # Source: Daily Exchange Rates (frankfurter.app / ECB)
+  # ---------------------------------------------------------------------------
+  - name: raw_exchange_rates
+    database: RAW
+    schema: EXCHANGE_RATES
+    description: >
+      Daily foreign exchange rates from the European Central Bank (ECB) via
+      the frankfurter.app API. EUR is the base currency with 6 target currencies
+      (USD, GBP, CHF, JPY, CAD, AUD). Loaded via Python ingestion script
+      (incremental MERGE on base_currency + target_currency + date).
+    tables:
+      - name: daily_rates
+        description: "Daily FX rates — one row per currency pair per day"
+        config:
+          loaded_at_field: _loaded_at
+          freshness:
+            warn_after: {count: 7, period: day}
+            error_after: {count: 30, period: day}
+        columns:
+          - name: BASE_CURRENCY
+            description: "Base currency code (always EUR in our dataset)"
+            tests:
+              - not_null
+          - name: TARGET_CURRENCY
+            description: "Target currency code (USD, GBP, CHF, JPY, CAD, AUD)"
+            tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: ['USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD']
+          - name: DATE
+            description: "Rate date (ECB publishes rates for business days)"
+            tests:
+              - not_null
+          - name: RATE
+            description: "Exchange rate — how many units of target currency per 1 EUR"
+            tests:
+              - not_null
+          - name: _LOADED_AT
+            description: "Audit timestamp — when this row was loaded into Snowflake by the ingestion script"
+
+
+# =============================================================================
+# MODELS — Staging Model Schemas & Tests
+# =============================================================================
+# These will be populated in Sub-Phase 3.2 when the staging SQL is written.
+# For now, we declare the models so tests can reference them.
+# =============================================================================
+
+models:
+  # ---------------------------------------------------------------------------
+  # stg_transactions
+  # ---------------------------------------------------------------------------
+  - name: stg_transactions
+    description: >
+      Cleaned and standardized credit card transactions. 1:1 with source table.
+      Renames columns to project conventions, casts types, derives customer_id.
+      Materialized as view (always fresh, zero storage cost).
+    columns:
+      - name: trans_num
+        description: "Unique transaction identifier (natural key from source)"
+        tests:
+          - not_null
+          - unique
+      - name: transaction_at
+        description: "Transaction timestamp (renamed from trans_date_trans_time)"
+        tests:
+          - not_null
+      - name: transaction_date
+        description: "Transaction date (extracted from timestamp, DATE type)"
+        tests:
+          - not_null
+      - name: transaction_amount
+        description: "Transaction amount in USD (cast to DECIMAL(10,2))"
+        tests:
+          - not_null
+      - name: card_number
+        description: "Credit card number (renamed from cc_num)"
+      - name: merchant_name
+        description: "Merchant name (trimmed and cleaned)"
+        tests:
+          - not_null
+      - name: category
+        description: "Merchant category (e.g., grocery_pos, gas_transport)"
+      - name: first_name
+        description: "Customer first name (renamed from first)"
+      - name: last_name
+        description: "Customer last name (renamed from last)"
+      - name: gender
+        description: "Customer gender (M or F)"
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['M', 'F']
+      - name: street
+        description: "Customer street address"
+      - name: city
+        description: "Customer city"
+      - name: state
+        description: "Customer US state code (uppercased)"
+      - name: zip_code
+        description: "Customer ZIP code (renamed from zip)"
+      - name: latitude
+        description: "Customer home latitude"
+      - name: longitude
+        description: "Customer home longitude"
+      - name: city_pop
+        description: "Population of the customer's city"
+      - name: job
+        description: "Customer job title / occupation"
+      - name: date_of_birth
+        description: "Customer date of birth (renamed from dob)"
+      - name: merchant_latitude
+        description: "Merchant store latitude (renamed from merch_lat)"
+      - name: merchant_longitude
+        description: "Merchant store longitude (renamed from merch_long)"
+      - name: is_fraud
+        description: "Fraud flag — 1 if fraudulent, 0 if legitimate"
+        tests:
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+      - name: _source_loaded_at
+        description: "Audit timestamp from source (_loaded_at passthrough)"
+
+  # ---------------------------------------------------------------------------
+  # stg_market_prices
+  # ---------------------------------------------------------------------------
+  - name: stg_market_prices
+    description: >
+      Cleaned and standardized daily stock prices. 1:1 with source table.
+      Renames columns to project conventions, casts numerics to DECIMAL.
+      Materialized as view.
+    columns:
+      - name: ticker_symbol
+        description: "Stock ticker symbol (renamed from ticker)"
+        tests:
+          - not_null
+      - name: price_date
+        description: "Trading date (renamed from date)"
+        tests:
+          - not_null
+      - name: open_price
+        description: "Opening price (renamed from open, cast to DECIMAL)"
+      - name: high_price
+        description: "Highest price of the day (renamed from high)"
+      - name: low_price
+        description: "Lowest price of the day (renamed from low)"
+      - name: close_price
+        description: "Closing price (renamed from close)"
+        tests:
+          - not_null
+      - name: adjusted_close_price
+        description: "Adjusted close price accounting for splits/dividends (renamed from adj_close)"
+      - name: volume
+        description: "Number of shares traded (cast to BIGINT)"
+      - name: _source_loaded_at
+        description: "Audit timestamp from source (_loaded_at passthrough)"
+
+  # ---------------------------------------------------------------------------
+  # stg_exchange_rates
+  # ---------------------------------------------------------------------------
+  - name: stg_exchange_rates
+    description: >
+      Cleaned and standardized daily exchange rates. 1:1 with source table.
+      Renames columns to project conventions, casts rate to DECIMAL(12,6).
+      Materialized as view.
+    columns:
+      - name: base_currency
+        description: "Base currency code (always EUR, uppercased)"
+        tests:
+          - not_null
+      - name: target_currency
+        description: "Target currency code (uppercased)"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD']
+      - name: rate_date
+        description: "Rate date (renamed from date)"
+        tests:
+          - not_null
+      - name: exchange_rate
+        description: "Exchange rate — units of target per 1 EUR (cast to DECIMAL(12,6))"
+        tests:
+          - not_null
+      - name: _source_loaded_at
+        description: "Audit timestamp from source (_loaded_at passthrough)"

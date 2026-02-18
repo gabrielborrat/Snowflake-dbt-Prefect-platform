@@ -1,0 +1,64 @@
+# =============================================================================
+# Snowflake Modern Data Stack Portfolio - Git Ignore
+# =============================================================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# --- Virtual Environment ---
+venv/
+.venv/
+env/
+ENV/
+
+# --- Environment Variables / Credentials ---
+.env
+*.env
+!.env.example
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cursor/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- dbt ---
+dbt_project/target/
+dbt_project/dbt_packages/
+dbt_project/logs/
+dbt_project/profiles.yml
+
+# --- Prefect ---
+.prefect/
+
+# --- Data Files (too large for git) ---
+data/
+*.csv
+!dbt_project/seeds/*.csv
+
+# --- Jupyter Notebooks ---
+.ipynb_checkpoints/
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Reference Materials (local only, copyrighted) ---
+references/
+
+# --- Working Documents (remove before final push) ---
+# docs/project_memory.md
+# docs/implementation_plan.md
+

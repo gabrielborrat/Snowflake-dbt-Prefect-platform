@@ -1,0 +1,123 @@
+-- =============================================================================
+-- 03 — Roles & Grants (RBAC)
+-- =============================================================================
+-- Run as: SECURITYADMIN (for roles) + SYSADMIN (for grants)
+-- Purpose: Implement role-based access control.
+--
+-- Role hierarchy:
+--   ACCOUNTADMIN
+--     └── SYSADMIN
+--         ├── INGESTION_ROLE  → writes to RAW.*
+--         ├── TRANSFORM_ROLE  → reads RAW.*, writes to ANALYTICS.*
+--         └── REPORTING_ROLE  → reads ANALYTICS.MARTS.*
+--
+-- Principle of least privilege:
+--   Each role only has access to what it needs.
+-- =============================================================================
+
+-- =============================================================================
+-- STEP 1: Create Roles
+-- =============================================================================
+USE ROLE SECURITYADMIN;
+
+CREATE ROLE IF NOT EXISTS INGESTION_ROLE
+    COMMENT = 'Role for Python ingestion scripts — writes to RAW';
+
+CREATE ROLE IF NOT EXISTS TRANSFORM_ROLE
+    COMMENT = 'Role for dbt transformations — reads RAW, writes to ANALYTICS';
+
+CREATE ROLE IF NOT EXISTS REPORTING_ROLE
+    COMMENT = 'Role for Power BI — reads from ANALYTICS.MARTS';
+
+-- Grant roles to SYSADMIN (so SYSADMIN can manage them)
+GRANT ROLE INGESTION_ROLE TO ROLE SYSADMIN;
+GRANT ROLE TRANSFORM_ROLE TO ROLE SYSADMIN;
+GRANT ROLE REPORTING_ROLE TO ROLE SYSADMIN;
+
+-- Grant roles to your user (replace YOUR_USERNAME with your actual username)
+-- GRANT ROLE INGESTION_ROLE TO USER YOUR_USERNAME;
+-- GRANT ROLE TRANSFORM_ROLE TO USER YOUR_USERNAME;
+-- GRANT ROLE REPORTING_ROLE TO USER YOUR_USERNAME;
+
+-- =============================================================================
+-- STEP 2: Warehouse Grants
+-- =============================================================================
+USE ROLE SYSADMIN;
+
+-- INGESTION_ROLE → uses INGESTION_WH
+GRANT USAGE ON WAREHOUSE INGESTION_WH TO ROLE INGESTION_ROLE;
+
+-- TRANSFORM_ROLE → uses TRANSFORM_WH
+GRANT USAGE ON WAREHOUSE TRANSFORM_WH TO ROLE TRANSFORM_ROLE;
+
+-- REPORTING_ROLE → uses REPORTING_WH
+GRANT USAGE ON WAREHOUSE REPORTING_WH TO ROLE REPORTING_ROLE;
+
+-- =============================================================================
+-- STEP 3: INGESTION_ROLE Grants (writes to RAW)
+-- =============================================================================
+
+-- Database-level access
+GRANT USAGE ON DATABASE RAW TO ROLE INGESTION_ROLE;
+
+-- Schema-level access (all RAW schemas)
+GRANT USAGE ON ALL SCHEMAS IN DATABASE RAW TO ROLE INGESTION_ROLE;
+GRANT USAGE ON FUTURE SCHEMAS IN DATABASE RAW TO ROLE INGESTION_ROLE;
+
+-- Table-level access (create + write in RAW)
+GRANT CREATE TABLE ON ALL SCHEMAS IN DATABASE RAW TO ROLE INGESTION_ROLE;
+GRANT CREATE TABLE ON FUTURE SCHEMAS IN DATABASE RAW TO ROLE INGESTION_ROLE;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN DATABASE RAW TO ROLE INGESTION_ROLE;
+GRANT SELECT, INSERT, UPDATE, DELETE ON FUTURE TABLES IN DATABASE RAW TO ROLE INGESTION_ROLE;
+
+-- Stage access (for file uploads if needed)
+GRANT CREATE STAGE ON ALL SCHEMAS IN DATABASE RAW TO ROLE INGESTION_ROLE;
+
+-- =============================================================================
+-- STEP 4: TRANSFORM_ROLE Grants (reads RAW, writes to ANALYTICS)
+-- =============================================================================
+
+-- Read access on RAW
+GRANT USAGE ON DATABASE RAW TO ROLE TRANSFORM_ROLE;
+GRANT USAGE ON ALL SCHEMAS IN DATABASE RAW TO ROLE TRANSFORM_ROLE;
+GRANT USAGE ON FUTURE SCHEMAS IN DATABASE RAW TO ROLE TRANSFORM_ROLE;
+GRANT SELECT ON ALL TABLES IN DATABASE RAW TO ROLE TRANSFORM_ROLE;
+GRANT SELECT ON FUTURE TABLES IN DATABASE RAW TO ROLE TRANSFORM_ROLE;
+
+-- Write access on ANALYTICS
+GRANT USAGE ON DATABASE ANALYTICS TO ROLE TRANSFORM_ROLE;
+GRANT CREATE SCHEMA ON DATABASE ANALYTICS TO ROLE TRANSFORM_ROLE;  -- dbt creates schemas dynamically (seeds, snapshots)
+GRANT USAGE ON ALL SCHEMAS IN DATABASE ANALYTICS TO ROLE TRANSFORM_ROLE;
+GRANT USAGE ON FUTURE SCHEMAS IN DATABASE ANALYTICS TO ROLE TRANSFORM_ROLE;
+
+GRANT CREATE TABLE ON ALL SCHEMAS IN DATABASE ANALYTICS TO ROLE TRANSFORM_ROLE;
+GRANT CREATE TABLE ON FUTURE SCHEMAS IN DATABASE ANALYTICS TO ROLE TRANSFORM_ROLE;
+GRANT CREATE VIEW ON ALL SCHEMAS IN DATABASE ANALYTICS TO ROLE TRANSFORM_ROLE;
+GRANT CREATE VIEW ON FUTURE SCHEMAS IN DATABASE ANALYTICS TO ROLE TRANSFORM_ROLE;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN DATABASE ANALYTICS TO ROLE TRANSFORM_ROLE;
+GRANT SELECT, INSERT, UPDATE, DELETE ON FUTURE TABLES IN DATABASE ANALYTICS TO ROLE TRANSFORM_ROLE;
+GRANT SELECT ON ALL VIEWS IN DATABASE ANALYTICS TO ROLE TRANSFORM_ROLE;
+GRANT SELECT ON FUTURE VIEWS IN DATABASE ANALYTICS TO ROLE TRANSFORM_ROLE;
+
+-- =============================================================================
+-- STEP 5: REPORTING_ROLE Grants (reads ANALYTICS.MARTS only)
+-- =============================================================================
+
+-- Database + schema access (read-only on MARTS)
+GRANT USAGE ON DATABASE ANALYTICS TO ROLE REPORTING_ROLE;
+GRANT USAGE ON SCHEMA ANALYTICS.MARTS TO ROLE REPORTING_ROLE;
+
+GRANT SELECT ON ALL TABLES IN SCHEMA ANALYTICS.MARTS TO ROLE REPORTING_ROLE;
+GRANT SELECT ON FUTURE TABLES IN SCHEMA ANALYTICS.MARTS TO ROLE REPORTING_ROLE;
+GRANT SELECT ON ALL VIEWS IN SCHEMA ANALYTICS.MARTS TO ROLE REPORTING_ROLE;
+GRANT SELECT ON FUTURE VIEWS IN SCHEMA ANALYTICS.MARTS TO ROLE REPORTING_ROLE;
+
+-- =============================================================================
+-- Verification
+-- =============================================================================
+SHOW ROLES;
+SHOW GRANTS TO ROLE INGESTION_ROLE;
+SHOW GRANTS TO ROLE TRANSFORM_ROLE;
+SHOW GRANTS TO ROLE REPORTING_ROLE;

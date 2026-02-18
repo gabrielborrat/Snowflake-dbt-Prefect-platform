@@ -1,0 +1,26 @@
+# =============================================================================
+# Snowflake Modern Data Stack Portfolio - Python Dependencies
+# =============================================================================
+
+# Snowflake
+snowflake-connector-python>=3.0
+snowflake-sqlalchemy>=1.5
+
+# dbt
+dbt-snowflake>=1.7
+
+# Ingestion
+yfinance>=0.2
+requests>=2.31
+pandas>=2.0
+
+# Orchestration
+prefect>=2.14
+
+# Utilities
+python-dotenv>=1.0
+loguru>=0.7
+
+# Testing
+pytest>=7.0
+

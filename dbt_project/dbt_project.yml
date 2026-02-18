@@ -1,0 +1,74 @@
+# =============================================================================
+# dbt Project Configuration
+# =============================================================================
+# Project: mds_portfolio
+# Architecture: Medallion (Bronze → Silver → Gold) + Kimball Star Schema
+#
+# Layer mapping:
+#   RAW (Bronze)        → Snowflake RAW database (loaded by Python ingestion)
+#   STAGING (Silver)    → ANALYTICS.STAGING (dbt views — cleaned, standardized)
+#   MARTS (Gold)        → ANALYTICS.MARTS (dbt tables/incremental — facts + dims)
+#   SNAPSHOTS           → ANALYTICS.SNAPSHOTS (dbt snapshots — SCD2 history)
+#   SEEDS               → ANALYTICS.SEEDS (dbt seeds — reference data)
+# =============================================================================
+
+name: 'mds_portfolio'
+version: '1.0.0'
+config-version: 2
+
+profile: 'mds_portfolio'
+
+# --- Directories ---
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+# --- Output ---
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# --- Model Configurations ---
+# Aligned with Zagni's layer architecture:
+#   - Default materialization: view (safe, cost-efficient)
+#   - Staging: views (always fresh, no storage cost)
+#   - Mart facts: incremental (1.85M+ rows — full rebuild too expensive)
+#   - Mart dims: table (small cardinality, fast BI joins)
+models:
+  mds_portfolio:
+    +materialized: view                  # Default: view (safe fallback)
+    staging:
+      +materialized: view               # Silver layer — always fresh, zero storage
+      +schema: staging
+    marts:
+      facts:
+        +materialized: incremental      # Gold layer — efficient updates for large fact tables
+        +schema: marts
+      dims:
+        +materialized: table            # Gold layer — full rebuild OK for small dims
+        +schema: marts
+
+# --- Snapshot Configurations ---
+snapshots:
+  mds_portfolio:
+    +target_schema: snapshots            # Isolated schema for SCD2 history
+
+# --- Seed Configurations ---
+seeds:
+  mds_portfolio:
+    +schema: seeds                       # Reference data in its own schema
+    currency_codes:
+      +column_types:
+        currency_code: varchar(3)
+        currency_name: varchar(50)
+        region: varchar(50)
+
+# --- Variables ---
+vars:
+  # Date spine range for dim_dates
+  date_spine_start: '2019-01-01'
+  date_spine_end: '2026-12-31'

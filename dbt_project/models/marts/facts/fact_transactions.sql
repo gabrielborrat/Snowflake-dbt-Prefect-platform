@@ -1,0 +1,11 @@
+-- =============================================================================
+-- Fact: Transactions
+-- =============================================================================
+-- Grain: One row per credit card transaction
+-- Source: stg_transactions
+-- Conformed dimensions: dim_dates, dim_currencies
+-- Domain dimensions: dim_customers, dim_merchants
+--
+-- Implementation: Phase 3
+-- =============================================================================
+
