@@ -58,6 +58,9 @@ logs/
 # --- Reference Materials (local only, copyrighted) ---
 references/
 
+# --- Personal Dev Journal (interview prep, not for public repo) ---
+docs/implementation_conversation.md
+
 # --- Working Documents (remove before final push) ---
 # docs/project_memory.md
 # docs/implementation_plan.md
