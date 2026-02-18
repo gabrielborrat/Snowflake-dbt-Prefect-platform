@@ -41,6 +41,9 @@ clean-targets:
 models:
   mds_portfolio:
     +materialized: view                  # Default: view (safe fallback)
+    +persist_docs:                        # Push YAML descriptions to Snowflake column comments
+      relation: true                     # Table/view-level COMMENT
+      columns: true                      # Column-level COMMENTs (visible in BI tools)
     staging:
       +materialized: view               # Silver layer — always fresh, zero storage
       +schema: staging
@@ -56,11 +59,17 @@ models:
 snapshots:
   mds_portfolio:
     +target_schema: snapshots            # Isolated schema for SCD2 history
+    +persist_docs:
+      relation: true
+      columns: true
 
 # --- Seed Configurations ---
 seeds:
   mds_portfolio:
     +schema: seeds                       # Reference data in its own schema
+    +persist_docs:
+      relation: true
+      columns: true
     currency_codes:
       +column_types:
         currency_code: varchar(3)

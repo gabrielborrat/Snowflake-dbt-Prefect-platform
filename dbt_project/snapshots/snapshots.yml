@@ -1,0 +1,81 @@
+# =============================================================================
+# Snapshots — SCD Type 2 History: Documentation
+# =============================================================================
+# Snapshots capture point-in-time state of slowly changing data.
+# Strategy: `check` — compares specified columns to detect changes.
+# dbt manages SCD2 metadata columns automatically:
+#   dbt_scd_id, dbt_updated_at, dbt_valid_from, dbt_valid_to
+#
+# Schema: ANALYTICS.SNAPSHOTS
+# =============================================================================
+
+version: 2
+
+snapshots:
+
+  - name: snap_customers
+    description: >
+      SCD Type 2 snapshot of customer attributes derived from stg_transactions.
+      Tracks changes in city, state, zip_code, and job over time. Each row
+      represents a version of a customer's profile. The `dbt_valid_from` and
+      `dbt_valid_to` columns define the effective date range for each version.
+      Current records have `dbt_valid_to = NULL`.
+      Used for historical analysis: "Where did this customer live when they
+      made a transaction 6 months ago?"
+    columns:
+      - name: card_number
+        description: "Unique key — credit card number (natural customer identifier)"
+        data_tests:
+          - not_null
+
+      - name: first_name
+        description: "Customer first name"
+
+      - name: last_name
+        description: "Customer last name"
+
+      - name: gender
+        description: "Customer gender (M or F)"
+
+      - name: street
+        description: "Customer street address"
+
+      - name: city
+        description: "Customer city — tracked for SCD2 changes"
+
+      - name: state
+        description: "Customer US state code — tracked for SCD2 changes"
+
+      - name: zip_code
+        description: "Customer ZIP code — tracked for SCD2 changes"
+
+      - name: latitude
+        description: "Customer home latitude"
+
+      - name: longitude
+        description: "Customer home longitude"
+
+      - name: city_pop
+        description: "Population of the customer's city"
+
+      - name: job
+        description: "Customer's occupation — tracked for SCD2 changes"
+
+      - name: date_of_birth
+        description: "Customer date of birth"
+
+      - name: _source_loaded_at
+        description: "Audit timestamp — when the source record was loaded into RAW"
+
+      - name: dbt_scd_id
+        description: "dbt-generated unique identifier for each SCD2 version"
+
+      - name: dbt_updated_at
+        description: "Timestamp of when this version was created or invalidated by dbt"
+
+      - name: dbt_valid_from
+        description: "Start of effective period for this version"
+
+      - name: dbt_valid_to
+        description: "End of effective period (NULL = current active version)"
+

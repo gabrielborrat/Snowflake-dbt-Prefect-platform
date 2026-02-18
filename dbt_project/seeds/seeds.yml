@@ -1,0 +1,37 @@
+# =============================================================================
+# Seeds — Reference Data: Documentation
+# =============================================================================
+# Seeds are small, static CSV files version-controlled in the repository.
+# Loaded into Snowflake via `dbt seed` as tables in ANALYTICS.SEEDS.
+#
+# Use case: lookup/reference tables that rarely change and are too small
+# to warrant a full ingestion pipeline (currencies, country codes, etc.)
+# =============================================================================
+
+version: 2
+
+seeds:
+
+  - name: currency_codes
+    description: >
+      ISO 4217 currency reference data. Contains 7 currencies used across
+      the platform: EUR (base for exchange rates), USD (transaction currency),
+      and 5 additional target currencies (GBP, CHF, JPY, CAD, AUD).
+      Feeds dim_currencies in the Gold layer. Loaded via `dbt seed`.
+    columns:
+      - name: currency_code
+        description: "ISO 4217 3-letter currency code (e.g., EUR, USD, GBP)"
+        data_tests:
+          - not_null
+          - unique
+
+      - name: currency_name
+        description: "Full human-readable currency name (e.g., 'Euro', 'US Dollar')"
+        data_tests:
+          - not_null
+
+      - name: region
+        description: "Geographic region the currency belongs to (Europe, North America, Asia, Oceania)"
+        data_tests:
+          - not_null
+

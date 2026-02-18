@@ -1089,7 +1089,7 @@ dbt source freshness               # Source freshness checks (3 sources)
 
 ---
 
-### Sub-Phase 3.8 — Documentation
+### Sub-Phase 3.8 — Documentation ✅
 
 > **Why this matters:**
 > In traditional data warehousing, documentation is an afterthought — a Word document or wiki page that goes stale within weeks. dbt fundamentally changes this by treating **documentation as code**: model and column descriptions live in the same YAML files as tests and configurations, are version-controlled in Git, and are compiled into a rich, interactive website with `dbt docs generate`. The crown jewel is the **DAG lineage graph** — a visual representation of every model, source, and dependency in the project. This graph is invaluable for onboarding new team members, debugging pipeline failures ("what upstream model feeds this mart?"), and demonstrating architectural clarity to hiring managers. When a consulting manager reviews this project, the DAG instantly communicates: "this candidate understands data flow, dependency management, and layered architecture." Column-level descriptions also propagate into BI tools, meaning a Power BI user hovering over a field can see its definition without leaving their report. For our portfolio, the DAG screenshot will be one of the most impactful visual artifacts in the README.
@@ -1102,15 +1102,39 @@ dbt source freshness               # Source freshness checks (3 sources)
 |---|------|--------|
 | 3.8.1 | Column-level descriptions | Every column in every model described in YAML |
 | 3.8.2 | Model-level descriptions | Business purpose for each staging, dim, and fact model |
-| 3.8.3 | Generate docs | `dbt docs generate` |
-| 3.8.4 | Verify DAG | `dbt docs serve` — inspect full lineage graph |
-| 3.8.5 | Screenshot DAG | Save to `architecture/diagrams/` for README |
+| 3.8.3 | Seed & snapshot YAML schemas | `seeds.yml` and `snapshots.yml` created with descriptions and tests |
+| 3.8.4 | `persist_docs` enabled | YAML descriptions pushed to Snowflake column `COMMENT`s (visible in BI tools) |
+| 3.8.5 | Generate docs | `dbt docs generate` |
+| 3.8.6 | Verify DAG | Manifest + catalog analysis (programmatic check) |
+| 3.8.7 | Screenshot DAG | *Deferred to Phase 6 — requires `dbt docs serve` in browser* |
+
+**Documentation Coverage:**
+
+| Asset Type | Assets | Columns | Documented | Coverage |
+|------------|--------|---------|------------|----------|
+| Models (staging) | 3 | 37 | 37 | 100% ✅ |
+| Models (dims) | 5 | 48 | 48 | 100% ✅ |
+| Models (facts) | 3 | 37 | 37 | 100% ✅ |
+| Seeds | 1 | 3 | 3 | 100% ✅ |
+| Snapshots | 1 | 18 | 18 | 100% ✅ |
+| **Total** | **13** | **143** | **143** | **100%** ✅ |
+
+**DAG Verification (manifest.json analysis):**
+- 11 models, 1 seed, 1 snapshot, 3 sources, 85 tests
+- All model dependencies correct
+- No unexpected orphans (facts are terminal — expected)
+- All models, seeds, and snapshots have model-level descriptions
+
+**Test Count Evolution:**
+- 76 generic (from Sub-Phases 3.1–3.4) → +4 singular (3.7) → +4 seed tests + 1 snapshot test (3.8) = **85 total**
 
 **Deliverables:**
-- [ ] All models and columns documented in YAML
-- [ ] `dbt docs generate` runs successfully
-- [ ] DAG lineage graph verified (no orphans, no reverse dependencies)
-- [ ] DAG screenshot saved
+- [x] All models and columns documented in YAML — **143/143 columns (100%)**
+- [x] `seeds.yml` and `snapshots.yml` created with descriptions and tests
+- [x] `persist_docs` enabled — descriptions flow to Snowflake column COMMENTs
+- [x] `dbt docs generate` runs successfully — catalog.json + manifest.json produced
+- [x] DAG lineage graph verified — no orphans, all dependencies correct
+- [ ] DAG screenshot — deferred to Phase 6 (requires browser for `dbt docs serve`)
 
 ---
 
