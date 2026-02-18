@@ -62,12 +62,12 @@ joined AS (
         -- Primary key
         {{ dbt_utils.generate_surrogate_key(['r.base_currency', 'r.target_currency', 'r.rate_date']) }}  AS rate_key,
 
-        -- Foreign keys (conformed dimensions)
-        COALESCE(dd.date_key, '-1')                             AS date_key,
+        -- Foreign keys (conformed dimensions) — coalesce_key handles orphan facts
+        {{ coalesce_key('dd.date_key') }}                         AS date_key,
 
         -- Role-playing currency dimension: base and target
-        COALESCE(cur_base.currency_key, '-1')                   AS base_currency_key,
-        COALESCE(cur_target.currency_key, '-1')                 AS target_currency_key,
+        {{ coalesce_key('cur_base.currency_key') }}               AS base_currency_key,
+        {{ coalesce_key('cur_target.currency_key') }}             AS target_currency_key,
 
         -- Degenerate dimensions
         r.base_currency,
@@ -76,7 +76,7 @@ joined AS (
         -- Measures
         r.exchange_rate,
 
-        -- Calculated measure — day-over-day change
+        -- Calculated measure — day-over-day change (safe subtraction, NULL if no previous)
         CASE
             WHEN r.previous_rate IS NOT NULL
             THEN ROUND(r.exchange_rate - r.previous_rate, 6)

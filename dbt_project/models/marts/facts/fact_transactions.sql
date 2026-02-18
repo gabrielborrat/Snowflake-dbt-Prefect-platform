@@ -65,13 +65,13 @@ joined AS (
         -- Primary key
         {{ dbt_utils.generate_surrogate_key(['t.trans_num']) }}  AS transaction_key,
 
-        -- Foreign keys (conformed dimensions)
-        COALESCE(dd.date_key, '-1')                              AS date_key,
-        COALESCE(cur.currency_key, '-1')                         AS currency_key,
+        -- Foreign keys (conformed dimensions) — coalesce_key handles orphan facts
+        {{ coalesce_key('dd.date_key') }}                          AS date_key,
+        {{ coalesce_key('cur.currency_key') }}                     AS currency_key,
 
         -- Foreign keys (domain dimensions)
-        COALESCE(dc.customer_key, '-1')                          AS customer_key,
-        COALESCE(dm.merchant_key, '-1')                          AS merchant_key,
+        {{ coalesce_key('dc.customer_key') }}                      AS customer_key,
+        {{ coalesce_key('dm.merchant_key') }}                      AS merchant_key,
 
         -- Degenerate dimensions (kept on fact for drill-through)
         t.trans_num,

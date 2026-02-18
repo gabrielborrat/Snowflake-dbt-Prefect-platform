@@ -68,12 +68,12 @@ joined AS (
         -- Primary key
         {{ dbt_utils.generate_surrogate_key(['p.ticker_symbol', 'p.price_date']) }}  AS price_key,
 
-        -- Foreign keys (conformed dimensions)
-        COALESCE(dd.date_key, '-1')                             AS date_key,
-        COALESCE(cur.currency_key, '-1')                        AS currency_key,
+        -- Foreign keys (conformed dimensions) — coalesce_key handles orphan facts
+        {{ coalesce_key('dd.date_key') }}                         AS date_key,
+        {{ coalesce_key('cur.currency_key') }}                    AS currency_key,
 
         -- Foreign keys (domain dimensions)
-        COALESCE(ds.security_key, '-1')                         AS security_key,
+        {{ coalesce_key('ds.security_key') }}                     AS security_key,
 
         -- Degenerate dimension
         p.ticker_symbol,
@@ -86,16 +86,12 @@ joined AS (
         p.adjusted_close_price,
         p.volume,
 
-        -- Calculated measure — daily return
-        CASE
-            WHEN p.previous_close_price IS NOT NULL
-                 AND p.previous_close_price != 0
-            THEN ROUND(
-                (p.close_price - p.previous_close_price) / p.previous_close_price,
-                6
-            )
-            ELSE NULL
-        END                                                      AS daily_return,
+        -- Calculated measure — daily return (safe_divide handles zero/null)
+        {{ safe_divide(
+            'p.close_price - p.previous_close_price',
+            'p.previous_close_price',
+            6
+        ) }}                                                       AS daily_return,
 
         -- Context
         p.price_date,
