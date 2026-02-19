@@ -1346,7 +1346,7 @@ orchestration/
 
 ---
 
-### Sub-Phase 4.1 — Ingestion Tasks & Flow
+### Sub-Phase 4.1 — Ingestion Tasks & Flow ✅
 
 > **Why this matters:**
 > The `@task` decorator is Prefect's fundamental building block. When you decorate a Python function with `@task`, Prefect wraps it with **state tracking** (Pending → Running → Completed/Failed), **automatic logging** (start time, duration, exceptions), and **retry capabilities** — all without changing the function's internal logic. We create one `@task` per ingestion source (transactions, market prices, exchange rates) because each source has a different failure profile: the CSV load is local and fast (unlikely to fail), while the API calls depend on external services (Yahoo Finance, frankfurter.app) that can timeout, rate-limit, or return errors. By isolating each source as its own task, a failure in exchange rate ingestion doesn't prevent transaction and market data from loading — this is the **partial success** pattern that production orchestrators must support. The ingestion flow (`ingestion_flow.py`) then composes these three tasks, running them **concurrently** using Prefect's native async support or `submit()` for task runners. Concurrent ingestion is safe because each source writes to its own Snowflake table — there are no shared resources or ordering dependencies between them.
@@ -1377,9 +1377,9 @@ def ingest_market_prices():
 ```
 
 **Deliverables:**
-- [ ] Three `@task`-decorated ingestion wrappers with retry/timeout config
-- [ ] Ingestion flow running all three tasks concurrently
-- [ ] Prefect UI showing individual task states (Completed/Failed per source)
+- [x] Three `@task`-decorated ingestion wrappers with retry/timeout config (CSV: 1 retry/3600s, API: 3 retries/1800s)
+- [x] Ingestion flow running all three tasks concurrently via `ThreadPoolTaskRunner(max_workers=3)`
+- [x] Prefect UI showing individual task states — flow `impressive-harrier`: 3/3 Completed (1,852,394 tx rows + API sources up to date)
 
 ---
 
