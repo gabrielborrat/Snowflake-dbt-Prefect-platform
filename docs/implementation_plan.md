@@ -1270,56 +1270,299 @@ dbt build    # runs snapshot + seed + run + test in correct DAG order
 ## Phase 4 – Prefect Orchestration
 
 ### Objective
-Orchestrate the full pipeline — ingestion, dbt runs, tests — using Prefect flows with scheduling, retries, and logging.
+Orchestrate the full pipeline — ingestion, dbt runs, tests — using Prefect flows with scheduling, retries, and logging. This phase transforms a collection of standalone scripts and dbt commands into a **single, observable, schedulable pipeline** managed by Prefect OSS.
 
-### Tasks
+### Reference Material & Design Principles
 
-| # | Task | Detail |
-|---|------|--------|
-| 4.1 | Create ingestion flow | Orchestrate all three ingestion scripts as Prefect tasks |
-| 4.2 | Create dbt flow | Run `dbt run` + `dbt test` as Prefect tasks |
-| 4.3 | Create full pipeline flow | Chain ingestion → dbt → validation |
-| 4.4 | Add retry logic | Retries on API calls and Snowflake connections |
-| 4.5 | Add logging | Structured logging within Prefect flows |
-| 4.6 | Add scheduling | Daily schedule for incremental runs |
-| 4.7 | Add error notifications | Log failures clearly (Prefect UI or console) |
-| 4.8 | Test end-to-end pipeline | Run full flow and verify data in all layers |
+Prefect (Open Source Software) is a **second-generation orchestrator** — unlike Airflow's DAG-as-code model where the orchestration framework dictates your code structure, Prefect follows a **code-first philosophy**: you write standard Python, then add `@flow` and `@task` decorators to gain orchestration capabilities (retries, logging, state tracking, scheduling) without restructuring your existing code. This makes Prefect uniquely well-suited for our project — the ingestion scripts from Phase 2 remain normal Python functions that can be tested and run independently, while Prefect wraps them with production-grade resilience.
+
+| Principle | How We Apply |
+|-----------|-------------|
+| **Code-first orchestration** | Existing Python scripts stay functional; `@task` decorators add observability without rewriting |
+| **Flows compose tasks** | A `@flow` is a Python function that calls `@task` functions — the DAG is implicit from Python's control flow |
+| **Tasks are the unit of retry and observability** | Each ingestion source and each dbt command is a separate `@task`, enabling per-source retry and per-step status tracking |
+| **Separation of orchestration from business logic** | Orchestration code (flows, schedules, retries) lives in `orchestration/`, business logic stays in `ingestion/` and `dbt_project/` |
+| **Local-first development** | Prefect OSS runs entirely on your machine — no cloud dependency, no external infrastructure, full control |
 
 ### Flow Architecture
 
 ```
 full_pipeline_flow (daily schedule)
 │
-├── Task: ingest_transactions()
-├── Task: ingest_market_prices()
-├── Task: ingest_exchange_rates()
+├── [parallel] Ingestion Tasks
+│   ├── Task: ingest_transactions()        ← TRUNCATE + INSERT (CSV)
+│   ├── Task: ingest_market_prices()       ← Incremental MERGE (API)
+│   └── Task: ingest_exchange_rates()      ← Incremental MERGE (API)
 │
-├── Task: dbt_run_staging()
-├── Task: dbt_run_marts()
+├── [sequential] dbt Transformation
+│   ├── Task: dbt_run_staging()            ← Silver layer (views)
+│   ├── Task: dbt_run_marts()              ← Gold layer (incremental)
+│   └── Task: dbt_snapshot()               ← SCD2 (snap_customers)
 │
-├── Task: dbt_test()
+├── [sequential] Validation
+│   ├── Task: dbt_test()                   ← Generic + singular tests
+│   └── Task: validate_row_counts()        ← Cross-layer reconciliation
 │
-└── Task: log_pipeline_summary()
+└── Task: log_pipeline_summary()           ← Duration, row counts, status
 ```
 
-### Flow Configuration
+---
 
-| Parameter | Value |
-|-----------|-------|
-| Schedule | Daily at 06:00 UTC |
-| Retries | 3 (on ingestion tasks) |
-| Retry delay | 60 seconds |
-| Timeout | 30 minutes per task |
-| Concurrency | Ingestion tasks run in parallel, dbt tasks sequential |
+### Sub-Phase 4.0 — Prefect Project Setup & Configuration
 
-### Deliverables
-- [ ] Ingestion flow working
-- [ ] dbt flow working
-- [ ] Full pipeline flow chaining both
-- [ ] Retry logic verified
-- [ ] Daily schedule configured
-- [ ] End-to-end pipeline tested
-- [ ] Prefect UI showing successful runs
+> **Why this matters:**
+> Before writing any flow, we need to establish the orchestration project structure and verify that Prefect runs correctly in our environment. Prefect OSS uses a **local server** (API + UI) that runs on your machine as a lightweight process — it tracks flow runs, task states, logs, and schedules in a local SQLite database. The Prefect UI (available at `http://localhost:4200`) provides a visual dashboard showing run history, task durations, and failure details — this is the "observable pipeline" that differentiates a professional data platform from a collection of cron jobs. Our project structure keeps orchestration code in its own `orchestration/` directory, separate from business logic (`ingestion/`, `dbt_project/`). This separation is intentional: the ingestion scripts and dbt models should remain independently testable without any Prefect dependency. The flow files *import from* the ingestion package and *shell out* to dbt — they are thin orchestration wrappers, not reimplementations. We also create a shared configuration module (`orchestration/config.py`) that centralizes Prefect-specific settings like retry counts, timeout durations, and schedule intervals, keeping them out of flow logic.
+
+| # | Task | Detail |
+|---|------|--------|
+| 4.0.1 | Create `orchestration/` directory structure | `orchestration/__init__.py`, `orchestration/config.py`, `orchestration/flows/`, `orchestration/tasks/` |
+| 4.0.2 | Verify Prefect installation | `prefect version` — confirm Prefect is installed from `requirements.txt` |
+| 4.0.3 | Start Prefect local server | `prefect server start` — verify UI accessible at `localhost:4200` |
+| 4.0.4 | Create orchestration config | Centralized retry counts, timeouts, schedule intervals, dbt project path |
+| 4.0.5 | Verify import paths | Confirm `from ingestion.sources import ...` works from orchestration directory |
+
+**Project structure:**
+```
+orchestration/
+├── __init__.py
+├── config.py                    # Retry counts, timeouts, schedule, dbt paths
+├── flows/
+│   ├── __init__.py
+│   ├── ingestion_flow.py        # Flow: run all ingestion tasks
+│   ├── dbt_flow.py              # Flow: run dbt commands
+│   └── full_pipeline_flow.py    # Flow: chain ingestion → dbt → validation
+└── tasks/
+    ├── __init__.py
+    ├── ingestion_tasks.py       # @task wrappers around ingestion scripts
+    ├── dbt_tasks.py             # @task wrappers around dbt CLI commands
+    └── validation_tasks.py      # @task wrappers for row count checks, logging
+```
+
+**Deliverables:**
+- [ ] `orchestration/` directory created with all subfolders
+- [ ] Prefect version confirmed and local server starts
+- [ ] Config module with centralized orchestration settings
+
+---
+
+### Sub-Phase 4.1 — Ingestion Tasks & Flow
+
+> **Why this matters:**
+> The `@task` decorator is Prefect's fundamental building block. When you decorate a Python function with `@task`, Prefect wraps it with **state tracking** (Pending → Running → Completed/Failed), **automatic logging** (start time, duration, exceptions), and **retry capabilities** — all without changing the function's internal logic. We create one `@task` per ingestion source (transactions, market prices, exchange rates) because each source has a different failure profile: the CSV load is local and fast (unlikely to fail), while the API calls depend on external services (Yahoo Finance, frankfurter.app) that can timeout, rate-limit, or return errors. By isolating each source as its own task, a failure in exchange rate ingestion doesn't prevent transaction and market data from loading — this is the **partial success** pattern that production orchestrators must support. The ingestion flow (`ingestion_flow.py`) then composes these three tasks, running them **concurrently** using Prefect's native async support or `submit()` for task runners. Concurrent ingestion is safe because each source writes to its own Snowflake table — there are no shared resources or ordering dependencies between them.
+
+| # | Task | Detail |
+|---|------|--------|
+| 4.1.1 | Create `ingestion_tasks.py` | Wrap `ingest_transactions`, `ingest_market_prices`, `ingest_exchange_rates` with `@task` decorators |
+| 4.1.2 | Configure per-task retries | API tasks: `retries=3, retry_delay_seconds=60`; CSV task: `retries=1` (local file, low failure risk) |
+| 4.1.3 | Add task-level timeouts | `timeout_seconds=1800` (30 min) per task to prevent hanging on unresponsive APIs |
+| 4.1.4 | Create `ingestion_flow.py` | `@flow` that calls all three ingestion tasks; concurrent execution for independent sources |
+| 4.1.5 | Test ingestion flow standalone | `python -m orchestration.flows.ingestion_flow` — verify all 3 sources load, check Prefect UI |
+
+**Prefect task anatomy:**
+```python
+from prefect import task
+from ingestion.sources.ingest_market_prices import ingest_market_prices as _ingest
+
+@task(
+    name="ingest-market-prices",
+    retries=3,
+    retry_delay_seconds=60,
+    timeout_seconds=1800,
+    tags=["ingestion", "api"]
+)
+def ingest_market_prices():
+    """Orchestration wrapper — delegates to ingestion module."""
+    return _ingest()
+```
+
+**Deliverables:**
+- [ ] Three `@task`-decorated ingestion wrappers with retry/timeout config
+- [ ] Ingestion flow running all three tasks concurrently
+- [ ] Prefect UI showing individual task states (Completed/Failed per source)
+
+---
+
+### Sub-Phase 4.2 — dbt Tasks & Flow
+
+> **Why this matters:**
+> dbt commands (`dbt run`, `dbt test`, `dbt snapshot`) are CLI operations, not Python functions — so wrapping them as Prefect tasks requires **subprocess execution** via Python's `subprocess.run()`. This is a common orchestration pattern: the orchestrator calls external tools as shell commands and captures their exit codes and output. We use `subprocess.run()` with `check=True` so that a non-zero exit code (dbt failure) raises a `CalledProcessError`, which Prefect catches and marks the task as **Failed** — integrating dbt's success/failure semantics into Prefect's state model. Each dbt command is a separate task because they have different failure implications: if `dbt run` for staging fails, there's no point running marts (the dependency chain is broken), but a `dbt test` failure after a successful `dbt run` is informational, not blocking — the data is loaded but has quality issues that need attention. The dbt flow (`dbt_flow.py`) runs these tasks **sequentially** in strict order: staging → snapshots → marts → tests. This order respects dbt's DAG: staging models must exist before marts can `ref()` them, and snapshots should capture the latest staging data before marts consume it.
+
+| # | Task | Detail |
+|---|------|--------|
+| 4.2.1 | Create `dbt_tasks.py` | `@task` wrappers for `dbt run --select staging`, `dbt run --select marts`, `dbt snapshot`, `dbt test` |
+| 4.2.2 | Handle subprocess execution | `subprocess.run(["dbt", "run", ...], cwd=dbt_project_path, check=True, capture_output=True)` |
+| 4.2.3 | Parse dbt output | Capture stdout/stderr, log key metrics (models run, tests passed/failed) |
+| 4.2.4 | Create `dbt_flow.py` | `@flow` chaining: staging → snapshot → marts → test (sequential, order matters) |
+| 4.2.5 | Test dbt flow standalone | `python -m orchestration.flows.dbt_flow` — verify all steps run, check Prefect UI |
+
+**dbt execution order within flow:**
+```
+dbt_flow()
+│
+├── 1. dbt run --select staging     ← Silver layer views (must exist first)
+├── 2. dbt snapshot                 ← SCD2 capture from staging data
+├── 3. dbt run --select marts       ← Gold layer tables (refs staging)
+└── 4. dbt test                     ← Validate everything
+```
+
+**Key design decision — `subprocess` vs `dbt Python API`:**
+We use `subprocess.run()` rather than importing dbt's internal Python API because dbt Core's internal API is **not stable** and changes between versions without notice. The CLI interface is the supported contract. This is the same approach used by production orchestrators (Airflow's `BashOperator`, Dagster's `dbt_cli_resource`).
+
+**Deliverables:**
+- [ ] Four `@task`-decorated dbt command wrappers (run staging, run marts, snapshot, test)
+- [ ] dbt flow running commands in correct dependency order
+- [ ] dbt stdout/stderr captured and logged in Prefect
+
+---
+
+### Sub-Phase 4.3 — Full Pipeline Flow (End-to-End Orchestration)
+
+> **Why this matters:**
+> The full pipeline flow is the **top-level entry point** — the single command that runs the entire data platform end-to-end. It composes the ingestion flow and the dbt flow into a **two-stage sequential pipeline**: first, all raw data is loaded into Snowflake (ingestion); then, all transformations are applied (dbt). This ordering is non-negotiable — dbt's `source()` function reads from the RAW tables that ingestion populates, so ingestion must complete before dbt starts. Within each stage, however, the concurrency model differs: ingestion tasks run **in parallel** (independent sources, independent target tables), while dbt tasks run **sequentially** (strict DAG dependency order). The full pipeline flow also adds a **validation step** after dbt completes: a cross-layer row count reconciliation that compares RAW table counts with ANALYTICS table counts. This is a production best practice often called a **data reconciliation check** — it catches silent failures where dbt runs successfully but produces fewer rows than expected (e.g., a broken `WHERE` clause in a staging model that silently filters out half the data). Finally, a **pipeline summary task** logs total duration, per-step row counts, and overall status — giving you a single log entry that answers "did the pipeline work?" without scrolling through hundreds of lines.
+
+| # | Task | Detail |
+|---|------|--------|
+| 4.3.1 | Create `validation_tasks.py` | `@task` for cross-layer row count reconciliation (RAW vs ANALYTICS) |
+| 4.3.2 | Create pipeline summary task | `@task` that logs total duration, row counts per table, pass/fail status |
+| 4.3.3 | Create `full_pipeline_flow.py` | `@flow` chaining: ingestion_flow → dbt_flow → validation → summary |
+| 4.3.4 | Handle inter-flow dependencies | Ingestion flow must complete (all tasks) before dbt flow starts |
+| 4.3.5 | Test full pipeline end-to-end | Run `full_pipeline_flow()` — verify all layers populated, Prefect UI green |
+
+**Pipeline composition pattern:**
+```python
+from prefect import flow
+from orchestration.flows.ingestion_flow import ingestion_flow
+from orchestration.flows.dbt_flow import dbt_flow
+from orchestration.tasks.validation_tasks import validate_row_counts, log_pipeline_summary
+
+@flow(name="full-pipeline", timeout_seconds=7200)
+def full_pipeline_flow():
+    """Top-level orchestration: ingest → transform → validate."""
+    ingestion_flow()                    # Stage 1: parallel ingestion
+    dbt_flow()                          # Stage 2: sequential dbt
+    counts = validate_row_counts()      # Stage 3: reconciliation
+    log_pipeline_summary(counts)        # Stage 4: observability
+```
+
+**Deliverables:**
+- [ ] Full pipeline flow chaining ingestion → dbt → validation → summary
+- [ ] Cross-layer row count validation task working
+- [ ] Pipeline summary with duration and status logged
+- [ ] End-to-end run visible in Prefect UI with all task states
+
+---
+
+### Sub-Phase 4.4 — Retry Logic, Error Handling & Resilience
+
+> **Why this matters:**
+> Prefect's retry mechanism is one of its most valuable features for production pipelines. When a `@task` with `retries=3` fails, Prefect doesn't just re-run it — it transitions the task through a **Retrying** state, waits the configured `retry_delay_seconds`, then attempts the task again with full state tracking. Each attempt is logged separately in the Prefect UI, showing exactly which attempt succeeded and how long each took. This is fundamentally different from writing `for i in range(3): try: ...` in plain Python — Prefect's retries integrate with the state machine, respect timeout limits, and are visible in the orchestration UI. Our retry strategy is **differentiated by risk**: API-dependent tasks (market prices, exchange rates) get 3 retries with 60-second delays (to survive transient API failures and rate limits), while local tasks (CSV ingestion, dbt commands) get 1 retry (to handle rare Snowflake connection hiccups without over-retrying). Beyond retries, we implement **flow-level error handling**: if the ingestion flow fails (all retries exhausted on a critical source), the full pipeline flow should still log a meaningful summary rather than crashing silently. This "fail gracefully, log loudly" principle from Phase 2 carries through to the orchestration layer.
+
+| # | Task | Detail |
+|---|------|--------|
+| 4.4.1 | Verify task retry configs | Confirm retry counts and delays are correctly applied per task type |
+| 4.4.2 | Test retry behavior | Simulate a transient failure (e.g., network timeout) and verify Prefect retries the task |
+| 4.4.3 | Add flow-level error handling | `try/except` in the full pipeline flow to log summary even on partial failure |
+| 4.4.4 | Verify partial success behavior | Kill one API during ingestion — confirm other sources still load |
+| 4.4.5 | Review Prefect UI retry visibility | Confirm retry attempts appear as separate entries in the UI task history |
+
+**Retry configuration matrix:**
+
+| Task | Retries | Delay (s) | Timeout (s) | Rationale |
+|------|---------|-----------|-------------|-----------|
+| `ingest_transactions` | 1 | 30 | 1800 | Local CSV — low failure risk, fast |
+| `ingest_market_prices` | 3 | 60 | 1800 | External API — transient failures likely |
+| `ingest_exchange_rates` | 3 | 60 | 1800 | External API — transient failures likely |
+| `dbt_run_staging` | 1 | 30 | 900 | Snowflake — rarely fails, fast (views) |
+| `dbt_run_marts` | 1 | 30 | 1800 | Snowflake — incremental, heavier compute |
+| `dbt_snapshot` | 1 | 30 | 600 | Snowflake — single table snapshot |
+| `dbt_test` | 0 | — | 600 | Tests should not be retried — failure is informational |
+
+**Deliverables:**
+- [ ] All task retry/timeout configurations verified against the matrix above
+- [ ] Retry behavior tested with simulated transient failure
+- [ ] Partial pipeline success confirmed (one source down, others still load)
+- [ ] Flow-level error handling logs summary even on failure
+
+---
+
+### Sub-Phase 4.5 — Scheduling & Deployment
+
+> **Why this matters:**
+> A pipeline that must be manually triggered is a script, not a platform. **Scheduling** transforms our project from a one-time batch job into a continuously operating data platform — exactly what a hiring manager expects to see from a senior engineer. Prefect supports schedules natively through **deployments**: a deployment is a named, versioned configuration that tells the Prefect server *which flow* to run, *when* to run it, and *with what parameters*. In Prefect OSS, deployments are created using `flow.serve()` (in-process) or `flow.deploy()` (work pool) — for our local-first portfolio project, `flow.serve()` is the right choice: it starts a lightweight Python process that stays alive and triggers the flow on schedule. We set the schedule to **daily at 06:00 UTC** — this is a standard convention for financial data pipelines because it runs after US market close (accounting for time zones) and before European business hours, ensuring both domains have fresh data at the start of the workday. The schedule uses a `CronSchedule` object, which any engineer familiar with cron syntax will immediately understand. We also configure the deployment to use the appropriate Snowflake environment variables, ensuring the scheduled flow runs with the same credentials as manual invocations.
+
+| # | Task | Detail |
+|---|------|--------|
+| 4.5.1 | Create deployment script | `orchestration/deploy.py` using `full_pipeline_flow.serve()` with cron schedule |
+| 4.5.2 | Configure cron schedule | `CronSchedule(cron="0 6 * * *")` — daily at 06:00 UTC |
+| 4.5.3 | Verify deployment registration | Confirm deployment appears in Prefect UI under Deployments tab |
+| 4.5.4 | Trigger manual run from UI | Use Prefect UI "Quick Run" to trigger the deployed flow manually |
+| 4.5.5 | Verify scheduled trigger | Let the schedule fire (or adjust to a near-future time) and confirm automatic execution |
+
+**Deployment pattern:**
+```python
+from orchestration.flows.full_pipeline_flow import full_pipeline_flow
+
+if __name__ == "__main__":
+    full_pipeline_flow.serve(
+        name="daily-mds-pipeline",
+        cron="0 6 * * *",
+        tags=["production", "daily"],
+        description="Full MDS pipeline: ingest → transform → validate"
+    )
+```
+
+**Deliverables:**
+- [ ] Deployment script created and registered with Prefect server
+- [ ] Schedule configured (daily 06:00 UTC)
+- [ ] Manual trigger from Prefect UI working
+- [ ] Scheduled trigger verified
+
+---
+
+### Sub-Phase 4.6 — End-to-End Testing & Observability
+
+> **Why this matters:**
+> The final sub-phase validates the entire orchestration layer as a production system. This is not about testing individual tasks (we did that in 4.1 and 4.2) — it's about verifying the **system-level behavior**: Does the pipeline recover from partial failures? Does the Prefect UI provide enough information to diagnose issues without reading logs? Are the task durations reasonable? Is the cross-layer reconciliation catching real problems? A senior engineer reviewing this project will open the Prefect UI and look for three things: (1) a clean flow run history showing green completions, (2) meaningful task names and tags that make the pipeline self-documenting, and (3) evidence that failures are handled gracefully rather than hidden. We run the full pipeline at least twice end-to-end: the first run performs a full load (all historical data), the second run demonstrates **incremental behavior** (only new data is fetched from APIs, dbt incremental models merge only new rows). The contrast between the two runs — in execution time, row counts, and API call volume — is powerful evidence of a well-designed incremental pipeline.
+
+| # | Task | Detail |
+|---|------|--------|
+| 4.6.1 | Full pipeline — clean run | Run `full_pipeline_flow()` with clean state; verify all layers populated |
+| 4.6.2 | Full pipeline — incremental run | Re-run immediately; verify API scripts fetch only new data, dbt incremental merges only deltas |
+| 4.6.3 | Verify Prefect UI dashboard | Check flow run history, task states, durations, logs, retry attempts |
+| 4.6.4 | Verify pipeline summary output | Confirm summary task logs total duration, per-table row counts, overall status |
+| 4.6.5 | Document orchestration results | Record execution times, row counts, and Prefect UI observations |
+
+**Verification checklist:**
+
+| Check | Expected Result |
+|-------|-----------------|
+| Flow run status | `Completed` (green) in Prefect UI |
+| All 3 ingestion tasks | `Completed` individually |
+| All 4 dbt tasks | `Completed` in correct order |
+| Validation task | `Completed` with row counts matching |
+| Incremental run time | Significantly shorter than initial full load |
+| Prefect UI logs | Structured, readable, traceable per task |
+| Pipeline summary | Duration + row counts + status logged |
+
+**Deliverables:**
+- [ ] Full pipeline run completed end-to-end (all tasks green)
+- [ ] Incremental run verified (shorter duration, fewer rows processed)
+- [ ] Prefect UI showing clean run history with task-level detail
+- [ ] Pipeline summary with metrics logged
+- [ ] Results documented in implementation conversation
+
+---
+
+### Deliverables (Phase 4 — Complete)
+- [ ] Prefect project structure created (`orchestration/`)
+- [ ] Ingestion flow working (3 sources, concurrent)
+- [ ] dbt flow working (staging → snapshot → marts → test, sequential)
+- [ ] Full pipeline flow chaining both with validation
+- [ ] Retry logic verified per task type
+- [ ] Daily schedule configured and deployment registered
+- [ ] End-to-end pipeline tested (full + incremental)
+- [ ] Prefect UI showing successful runs with task-level observability
+- [ ] Cross-layer row count reconciliation passing
 
 ### Dependencies
 - Phase 2 complete (ingestion scripts working)
