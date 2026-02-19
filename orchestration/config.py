@@ -23,7 +23,7 @@ API_TASK_TIMEOUT = 1800  # 30 min
 # Local / file-based tasks: low failure risk
 LOCAL_TASK_RETRIES = 1
 LOCAL_TASK_RETRY_DELAY = 30
-LOCAL_TASK_TIMEOUT = 1800
+LOCAL_TASK_TIMEOUT = 3600  # 60 min (CSV transaction load is 1.85M rows)
 
 # dbt tasks
 DBT_TASK_RETRIES = 1
