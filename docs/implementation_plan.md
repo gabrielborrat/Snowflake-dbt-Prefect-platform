@@ -1383,7 +1383,7 @@ def ingest_market_prices():
 
 ---
 
-### Sub-Phase 4.2 — dbt Tasks & Flow
+### Sub-Phase 4.2 — dbt Tasks & Flow ✅
 
 > **Why this matters:**
 > dbt commands (`dbt run`, `dbt test`, `dbt snapshot`) are CLI operations, not Python functions — so wrapping them as Prefect tasks requires **subprocess execution** via Python's `subprocess.run()`. This is a common orchestration pattern: the orchestrator calls external tools as shell commands and captures their exit codes and output. We use `subprocess.run()` with `check=True` so that a non-zero exit code (dbt failure) raises a `CalledProcessError`, which Prefect catches and marks the task as **Failed** — integrating dbt's success/failure semantics into Prefect's state model. Each dbt command is a separate task because they have different failure implications: if `dbt run` for staging fails, there's no point running marts (the dependency chain is broken), but a `dbt test` failure after a successful `dbt run` is informational, not blocking — the data is loaded but has quality issues that need attention. The dbt flow (`dbt_flow.py`) runs these tasks **sequentially** in strict order: staging → snapshots → marts → tests. This order respects dbt's DAG: staging models must exist before marts can `ref()` them, and snapshots should capture the latest staging data before marts consume it.
@@ -1410,9 +1410,10 @@ dbt_flow()
 We use `subprocess.run()` rather than importing dbt's internal Python API because dbt Core's internal API is **not stable** and changes between versions without notice. The CLI interface is the supported contract. This is the same approach used by production orchestrators (Airflow's `BashOperator`, Dagster's `dbt_cli_resource`).
 
 **Deliverables:**
-- [ ] Four `@task`-decorated dbt command wrappers (run staging, run marts, snapshot, test)
-- [ ] dbt flow running commands in correct dependency order
-- [ ] dbt stdout/stderr captured and logged in Prefect
+- [x] Four `@task`-decorated dbt command wrappers (run staging, run marts, snapshot, test) via `subprocess.run()` with `dotenv_values()` env parsing
+- [x] dbt flow running commands in correct sequential order: staging → snapshot → marts → test (flow `quaint-boobook`: 4/4 Completed)
+- [x] dbt stdout/stderr captured and logged in Prefect — PASS=3 staging, PASS=1 snapshot, PASS=8 marts, PASS=84 tests
+- [x] Fixed: .env inline comment bug in env parser, stg_transactions ROW_NUMBER() dedup for overlapping CSV files, removed raw-level unique test on TRANS_NUM
 
 ---
 
