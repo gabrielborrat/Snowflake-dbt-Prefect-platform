@@ -30,31 +30,76 @@ from orchestration.tasks.validation_tasks import (
     log_prints=True,
 )
 def full_pipeline_flow():
-    """Run the complete MDS pipeline: ingest → transform → validate."""
+    """Run the complete MDS pipeline: ingest → transform → validate.
+
+    Flow-level error handling ensures the pipeline summary is always
+    logged, even when a stage fails. This follows the "fail gracefully,
+    log loudly" principle from Phase 2.
+    """
     logger = get_run_logger()
     start_time = time.time()
+    stage_results = {"ingestion": None, "dbt": None, "validation": None}
 
     logger.info("=" * 60)
     logger.info("STARTING FULL PIPELINE")
     logger.info("=" * 60)
 
-    # Stage 1: Ingestion (concurrent — 3 independent sources)
-    logger.info("Stage 1/4 — Ingestion (parallel)")
-    ingestion_flow()
+    try:
+        # Stage 1: Ingestion (concurrent — 3 independent sources)
+        logger.info("Stage 1/4 — Ingestion (parallel)")
+        ingestion_flow()
+        stage_results["ingestion"] = "completed"
+    except Exception as e:
+        stage_results["ingestion"] = f"failed: {e}"
+        logger.error(f"Stage 1 FAILED — Ingestion: {e}")
+        logger.error("Skipping dbt transformation (no fresh data to transform)")
+        _log_failure_summary(logger, stage_results, start_time)
+        raise
 
-    # Stage 2: dbt transformation (sequential — DAG order)
-    logger.info("Stage 2/4 — dbt Transformation (sequential)")
-    dbt_flow()
+    try:
+        # Stage 2: dbt transformation (sequential — DAG order)
+        logger.info("Stage 2/4 — dbt Transformation (sequential)")
+        dbt_flow()
+        stage_results["dbt"] = "completed"
+    except Exception as e:
+        stage_results["dbt"] = f"failed: {e}"
+        logger.error(f"Stage 2 FAILED — dbt: {e}")
+        logger.warning("Proceeding to validation with stale data")
 
-    # Stage 3: Validation (cross-layer reconciliation)
+    # Stage 3: Validation (runs even if dbt had issues)
     logger.info("Stage 3/4 — Validation")
-    counts = validate_row_counts()
+    try:
+        counts = validate_row_counts()
+        stage_results["validation"] = "completed"
+    except Exception as e:
+        stage_results["validation"] = f"failed: {e}"
+        logger.error(f"Stage 3 FAILED — Validation: {e}")
+        counts = {"_reconciliation_passed": False}
 
-    # Stage 4: Summary
+    # Stage 4: Summary (always runs)
     logger.info("Stage 4/4 — Pipeline Summary")
     log_pipeline_summary(counts, start_time)
 
+    if stage_results["dbt"] and "failed" in str(stage_results["dbt"]):
+        raise RuntimeError(
+            f"Pipeline completed with errors: {stage_results}"
+        )
+
     logger.info("FULL PIPELINE COMPLETE")
+
+
+def _log_failure_summary(logger, stage_results: dict, start_time: float):
+    """Log a minimal summary when the pipeline fails early."""
+    elapsed = time.time() - start_time
+    minutes = int(elapsed // 60)
+    seconds = int(elapsed % 60)
+    logger.error("=" * 60)
+    logger.error("PIPELINE FAILED — EARLY EXIT")
+    logger.error(f"  Duration: {minutes}m {seconds}s")
+    for stage, result in stage_results.items():
+        status = result or "not started"
+        logger.error(f"  {stage:15}: {status}")
+    logger.error("=" * 60)
 
 
 if __name__ == "__main__":
