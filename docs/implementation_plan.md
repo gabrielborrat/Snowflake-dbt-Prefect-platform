@@ -1308,7 +1308,7 @@ full_pipeline_flow (daily schedule)
 
 ---
 
-### Sub-Phase 4.0 — Prefect Project Setup & Configuration
+### Sub-Phase 4.0 — Prefect Project Setup & Configuration ✅
 
 > **Why this matters:**
 > Before writing any flow, we need to establish the orchestration project structure and verify that Prefect runs correctly in our environment. Prefect OSS uses a **local server** (API + UI) that runs on your machine as a lightweight process — it tracks flow runs, task states, logs, and schedules in a local SQLite database. The Prefect UI (available at `http://localhost:4200`) provides a visual dashboard showing run history, task durations, and failure details — this is the "observable pipeline" that differentiates a professional data platform from a collection of cron jobs. Our project structure keeps orchestration code in its own `orchestration/` directory, separate from business logic (`ingestion/`, `dbt_project/`). This separation is intentional: the ingestion scripts and dbt models should remain independently testable without any Prefect dependency. The flow files *import from* the ingestion package and *shell out* to dbt — they are thin orchestration wrappers, not reimplementations. We also create a shared configuration module (`orchestration/config.py`) that centralizes Prefect-specific settings like retry counts, timeout durations, and schedule intervals, keeping them out of flow logic.
@@ -1339,9 +1339,10 @@ orchestration/
 ```
 
 **Deliverables:**
-- [ ] `orchestration/` directory created with all subfolders
-- [ ] Prefect version confirmed and local server starts
-- [ ] Config module with centralized orchestration settings
+- [x] `orchestration/` directory created with all subfolders (removed `schedules/`, added `tasks/`, `config.py`, `flows/__init__.py`)
+- [x] Prefect version confirmed: **3.6.17** — local server started, health check passed (`/api/health → true`)
+- [x] Config module with centralized orchestration settings (retry matrix, timeouts, cron, dbt paths, tags)
+- [x] Import paths verified: all 3 ingestion functions + orchestration config importable from project root
 
 ---
 
