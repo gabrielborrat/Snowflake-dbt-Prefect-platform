@@ -1417,7 +1417,7 @@ We use `subprocess.run()` rather than importing dbt's internal Python API becaus
 
 ---
 
-### Sub-Phase 4.3 — Full Pipeline Flow (End-to-End Orchestration)
+### Sub-Phase 4.3 — Full Pipeline Flow (End-to-End Orchestration) ✅
 
 > **Why this matters:**
 > The full pipeline flow is the **top-level entry point** — the single command that runs the entire data platform end-to-end. It composes the ingestion flow and the dbt flow into a **two-stage sequential pipeline**: first, all raw data is loaded into Snowflake (ingestion); then, all transformations are applied (dbt). This ordering is non-negotiable — dbt's `source()` function reads from the RAW tables that ingestion populates, so ingestion must complete before dbt starts. Within each stage, however, the concurrency model differs: ingestion tasks run **in parallel** (independent sources, independent target tables), while dbt tasks run **sequentially** (strict DAG dependency order). The full pipeline flow also adds a **validation step** after dbt completes: a cross-layer row count reconciliation that compares RAW table counts with ANALYTICS table counts. This is a production best practice often called a **data reconciliation check** — it catches silent failures where dbt runs successfully but produces fewer rows than expected (e.g., a broken `WHERE` clause in a staging model that silently filters out half the data). Finally, a **pipeline summary task** logs total duration, per-step row counts, and overall status — giving you a single log entry that answers "did the pipeline work?" without scrolling through hundreds of lines.
@@ -1447,10 +1447,10 @@ def full_pipeline_flow():
 ```
 
 **Deliverables:**
-- [ ] Full pipeline flow chaining ingestion → dbt → validation → summary
-- [ ] Cross-layer row count validation task working
-- [ ] Pipeline summary with duration and status logged
-- [ ] End-to-end run visible in Prefect UI with all task states
+- [x] Full pipeline flow chaining ingestion → dbt → validation → summary (`full_pipeline_flow.py`)
+- [x] Cross-layer row count validation — 14 tables queried, 3/3 reconciliation checks PASSED (staging = fact for all domains)
+- [x] Pipeline summary with duration (45m 11s), row counts per table, and status (COMPLETED) logged
+- [x] End-to-end run visible in Prefect UI — flow `rapid-gerbil`: all sub-flows and tasks green
 
 ---
 
