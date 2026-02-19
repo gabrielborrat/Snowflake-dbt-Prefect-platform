@@ -71,10 +71,9 @@ sources:
           - name: DOB
             description: "Customer date of birth"
           - name: TRANS_NUM
-            description: "Unique transaction identifier (natural key)"
+            description: "Transaction identifier (natural key — duplicates expected across train/test CSV files, deduplication applied in staging)"
             tests:
               - not_null
-              - unique
           - name: UNIX_TIME
             description: "Transaction timestamp as Unix epoch (seconds since 1970-01-01)"
           - name: MERCH_LAT

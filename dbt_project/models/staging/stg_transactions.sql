@@ -88,9 +88,19 @@ cleaned AS (
     FROM renamed
 ),
 
--- Step 4: Final output — this is what downstream models see via ref()
+-- Step 4: Deduplicate — the train and test CSV files share 875K overlapping trans_num values
+deduped AS (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (PARTITION BY trans_num ORDER BY _source_loaded_at DESC) AS _rn
+    FROM cleaned
+),
+
+-- Step 5: Final output — this is what downstream models see via ref()
 final AS (
-    SELECT * FROM cleaned
+    SELECT * EXCLUDE (_rn)
+    FROM deduped
+    WHERE _rn = 1
 )
 
 SELECT * FROM final
